@@ -6,6 +6,10 @@ import os
 import re
 from io import BytesIO
 
+from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
+from django.utils.module_loading import import_string
+
 try:
     import brotli
 
@@ -123,6 +127,16 @@ class Compressor:
         return filename
 
 
+try:
+    compressor_class = import_string(
+        getattr(
+            settings, "WHITENOISE_COMPRESSOR_CLASS", "whitenoise.compress.Compressor"
+        ),
+    )
+except ImproperlyConfigured:
+    compressor_class = Compressor
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Search for all files inside <root> *not* matching "
@@ -152,13 +166,21 @@ def main(argv=None):
         nargs="*",
         help=(
             "File extensions to exclude from compression "
-            + f"(default: {default_exclude})"
+            "(default: {})".format(", ".join(compressor_class.SKIP_COMPRESS_EXTENSIONS))
         ),
-        default=Compressor.SKIP_COMPRESS_EXTENSIONS,
+        default=compressor_class.SKIP_COMPRESS_EXTENSIONS,
+    )
+    parser.add_argument(
+        "--compressor-class",
+        nargs="*",
+        help="Path to compressor class",
+        dest="compressor_class",
+        default="whitenoise.compress.Compressor",
     )
     args = parser.parse_args(argv)
 
-    compressor = Compressor(
+    compressor_class = import_string(args.compressor_class)
+    compressor = compressor_class(
         extensions=args.extensions,
         use_gzip=args.use_gzip,
         use_brotli=args.use_brotli,
